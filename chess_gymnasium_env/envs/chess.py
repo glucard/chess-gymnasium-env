@@ -10,6 +10,7 @@ import io
 import random
 from typing import Union
 import cairosvg
+from typing import List
 
 from .utils import get_chess_grid
 
@@ -33,10 +34,7 @@ class ChessEnv(gym.Env):
         self.observation_space = spaces.Box(0, 1, (8,8,12), np.int8)
 
         # We have 4 actions, corresponding to "right", "up", "left", "down", "right"
-        self.action_space = spaces.Dict({
-            "from_square": spaces.Discrete(63),
-            "to_square": spaces.Discrete(63),
-        })
+        self.action_space = spaces.MultiDiscrete([64,64])
 
         """
         The following dictionary maps abstract actions from `self.action_space` to 
@@ -68,20 +66,38 @@ class ChessEnv(gym.Env):
             # "distance": np.linalg.norm(
             #     self._agent_location - self._target_location, ord=1
             # )
+            "action_mask": self._get_action_mask(),
             "fen": self.board.fen(),
         }
     
+    def _legal_moves(self) -> List[chess.Move]:
+        return list(self.board.generate_legal_moves())
+
     def _action_sample(self) -> Union[tuple[int, int], None]:
         """
         Returns a legal action
         """
-        legal_moves = list(self.board.generate_legal_moves())
+        legal_moves = self._legal_moves()
         
         if len(legal_moves) == 0:
             return None
 
         move = random.choice(legal_moves)
         return move.from_square, move.to_square
+    
+    def _get_action_mask(self):
+        """
+        Returns a binary mask for valid actions.
+        Example: Masking some actions based on custom rules.
+        """
+        # Create a mask for all actions (1 = valid, 0 = invalid)
+        mask = np.zeros((64, 64), dtype=np.int32)
+
+        legal_moves = self._legal_moves()
+        for move in legal_moves:
+            mask[move.from_square, move.to_square] = 1
+
+        return mask.flatten()  # Return the mask as a 1D array (needed for MaskablePPO)
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random

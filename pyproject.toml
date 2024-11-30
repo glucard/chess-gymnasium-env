@@ -7,7 +7,7 @@ packages = ["chess_gymnasium_env"]
 
 [project]
 name = "chess_gymnasium_env"
-version = "0.0.1"
+version = "0.0.2"
 dynamic = ["dependencies"]
 
 [tool.setuptools.dynamic]
