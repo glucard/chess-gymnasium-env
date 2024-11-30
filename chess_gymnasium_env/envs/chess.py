@@ -97,7 +97,7 @@ class ChessEnv(gym.Env):
         for move in legal_moves:
             mask[move.from_square, move.to_square] = 1
 
-        return mask.flatten()  # Return the mask as a 1D array (needed for MaskablePPO)
+        return mask
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
@@ -114,6 +114,9 @@ class ChessEnv(gym.Env):
         return observation, info
 
     def step(self, action):
+        # Validate the action
+        assert self.action_space.contains(action), f"Invalid action: {action}"
+
         # Map the action from (from_square, to_square) to uci move
         move = self._action_to_move(action)
         
