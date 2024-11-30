@@ -98,6 +98,21 @@ class ChessEnv(gym.Env):
         for move in legal_moves:
             mask[move.from_square * 64 + move.to_square] = 1
         return mask
+    
+    def _opponent_step(self) -> bool:
+        """ opponent makes a random move
+        Returns:
+            if opponent has moved return True. If not return False
+        """
+        legal_moves = self._legal_moves()
+
+        if len(legal_moves) == 0:
+            return False
+
+        opponent_move = random.choice(legal_moves)
+        self.board.push(opponent_move)
+        return True
+
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
@@ -122,6 +137,10 @@ class ChessEnv(gym.Env):
         
         # Push move to board
         self.board.push(move)
+
+        # Opponent tries a move if not has outcome yet:
+        if not self.board.outcome():
+            self._opponent_step()
         
         #
         reward = 0
