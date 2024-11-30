@@ -9,6 +9,7 @@ import chess.svg
 import io
 import random
 from typing import Union
+import cairosvg
 
 from .utils import get_chess_grid
 
@@ -98,8 +99,8 @@ class ChessEnv(gym.Env):
 
     def step(self, action):
         # Map the action from (from_square, to_square) to uci move
-        move = self._action_to_direction(action)
-
+        move = self._action_to_move(action)
+        
         # Push move to board
         self.board.push(move)
         
@@ -111,11 +112,10 @@ class ChessEnv(gym.Env):
         outcome = self.board.outcome()
         if outcome:
             terminated = True
-            print(outcome)
             if outcome.termination == chess.Termination.CHECKMATE:
-                reward = 10 if outcome.winner else -1
+                reward = 10 if outcome.winner else -10
             else:
-                reward = -10
+                reward = -1
                 
         #
         observation = self._get_obs()
@@ -138,20 +138,23 @@ class ChessEnv(gym.Env):
         if self.clock is None and self.render_mode == "human":
             self.clock = pygame.time.Clock()
 
-        # canvas = pygame.Surface((self.window_size, self.window_size))
-        # canvas.fill((255, 255, 255))
-        boardsvg = chess.svg.board(board=self.board)
-        boardsvg = io.BytesIO(boardsvg.encode())
+        canvas = pygame.Surface((self.window_size, self.window_size))
+        canvas.fill((255, 255, 255))
+        # Create the chess board SVG
+        board_svg = chess.svg.board(board=self.board)
 
-        #Step 2: Blit the image
-        image = pygame.image.load(boardsvg)
-        image = pygame.transform.scale(image, (self.window_size, self.window_size))
-        # canvas.blit(image,(0,0))
-        pygame.display.flip()
-                
+        # Convert SVG to PNG using cairosvg
+        png_data = cairosvg.svg2png(bytestring=board_svg.encode())
+
+        # Load PNG into Pygame
+        image = pygame.image.load(io.BytesIO(png_data))
+
+        # Scale the image
+        image = pygame.transform.scale(image, (512, 512))
 
         if self.render_mode == "human":
             # The following line copies our drawings from `canvas` to the visible window
+            # Display the image
             self.window.blit(image, image.get_rect())
             pygame.event.pump()
             pygame.display.update()
