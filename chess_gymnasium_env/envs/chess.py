@@ -22,7 +22,7 @@ class Actions(Enum):
 
 
 class ChessEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 1}
 
     def __init__(self, render_mode=None):
         self.board = chess.Board() # chess game board
@@ -34,7 +34,7 @@ class ChessEnv(gym.Env):
         self.observation_space = spaces.Box(0, 1, (8,8,12), np.int8)
 
         # We have 4 actions, corresponding to "right", "up", "left", "down", "right"
-        self.action_space = spaces.MultiDiscrete((64,64))
+        self.action_space = spaces.Discrete(64*64)
 
         """
         The following dictionary maps abstract actions from `self.action_space` to 
@@ -56,7 +56,7 @@ class ChessEnv(gym.Env):
         self.clock = None
     
     def _action_to_move(self, action) -> chess.Move:
-        # action = action//64, action%64
+        action = action//64, action%64
         return self.board.find_move(*action)
 
     def _get_obs(self):
@@ -67,8 +67,8 @@ class ChessEnv(gym.Env):
             # "distance": np.linalg.norm(
             #     self._agent_location - self._target_location, ord=1
             # )
-            "action_mask": self._get_action_mask(),
-            "fen": self.board.fen(),
+            #"action_mask": self._get_action_mask(),
+            #"fen": self.board.fen(),
         }
     
     def _legal_moves(self) -> List[chess.Move]:
@@ -92,11 +92,11 @@ class ChessEnv(gym.Env):
         Example: Masking some actions based on custom rules.
         """
         # Create a mask for all actions (1 = valid, 0 = invalid)
-        mask = np.zeros((64, 64), dtype=np.int32)
+        mask = np.zeros((64 * 64), dtype=np.int32)
 
         legal_moves = self._legal_moves()
         for move in legal_moves:
-            mask[move.from_square, move.to_square] = 1
+            mask[move.from_square * 64 + move.to_square] = 1
         return mask
     
     def _opponent_step(self) -> bool:
@@ -112,7 +112,6 @@ class ChessEnv(gym.Env):
         opponent_move = random.choice(legal_moves)
         self.board.push(opponent_move)
         return True
-
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
