@@ -7,7 +7,7 @@ packages = ["chess_gymnasium_env"]
 
 [project]
 name = "chess_gymnasium_env"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
     "gymnasium",
     "pygame>=2.1.3",

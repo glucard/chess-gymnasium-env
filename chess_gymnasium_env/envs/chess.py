@@ -143,7 +143,7 @@ class ChessEnv(gym.Env):
             self._opponent_step()
         
         #
-        reward = 0
+        reward = -0.1
         terminated = False
 
         # check_out_comes
@@ -153,7 +153,7 @@ class ChessEnv(gym.Env):
             if outcome.termination == chess.Termination.CHECKMATE:
                 reward = 10 if outcome.winner else -10
             else:
-                reward = -1
+                reward = -3
                 
         #
         observation = self._get_obs()
