@@ -84,7 +84,7 @@ class ChessEnv(gym.Env):
             return None
 
         move = random.choice(legal_moves)
-        return move.from_square, move.to_square
+        return move.from_square * 64 + move.to_square
     
     def _get_action_mask(self):
         """
@@ -112,6 +112,9 @@ class ChessEnv(gym.Env):
         opponent_move = random.choice(legal_moves)
         self.board.push(opponent_move)
         return True
+    
+    def _count_pieces(self, color:bool) -> int:
+        return sum([piece.color==color for piece in self.board.piece_map().values()])
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
@@ -130,6 +133,10 @@ class ChessEnv(gym.Env):
     def step(self, action):
         # Validate the action
         assert self.action_space.contains(action), f"Invalid action: {action}"
+        
+        # Check pieces to calculate rewards
+        start_pieces_count = self._count_pieces(True)
+        opponent_start_pieces_count = self._count_pieces(False)
 
         # Map the action from (from_square, to_square) to uci move
         move = self._action_to_move(action)
@@ -144,6 +151,10 @@ class ChessEnv(gym.Env):
         #
         reward = -0.1
         terminated = False
+        
+        # Atributte rewards to remaning pieces counts
+        reward += (self._count_pieces(True) - start_pieces_count) * 1
+        reward += (self._count_pieces(False) - opponent_start_pieces_count) * (-1)
 
         # check_out_comes
         outcome = self.board.outcome()
