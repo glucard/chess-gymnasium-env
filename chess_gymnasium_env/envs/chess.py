@@ -149,19 +149,22 @@ class ChessEnv(gym.Env):
             self._opponent_step()
         
         #
-        reward = -0.1
+        reward = -0.2
         terminated = False
         
         # Atributte rewards to remaning pieces counts
-        reward += (self._count_pieces(True) - start_pieces_count) * 1
-        reward += (self._count_pieces(False) - opponent_start_pieces_count) * (-1)
+        take_rewards = (self._count_pieces(True) - start_pieces_count) * 0
+        taken_rewards = (self._count_pieces(False) - opponent_start_pieces_count) * (-1)
+        if take_rewards != 0 or taken_rewards != 0:
+            reward = take_rewards
+            reward += taken_rewards
 
         # check_out_comes
         outcome = self.board.outcome()
         if outcome:
             terminated = True
             if outcome.termination == chess.Termination.CHECKMATE:
-                reward = 10 if outcome.winner else -10
+                reward = 100 if outcome.winner else -10
             else:
                 reward = -3
                 
