@@ -22,7 +22,7 @@ class Actions(Enum):
 
 
 class ChessEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 1}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": None} # 1 }
 
     def __init__(self, render_mode=None):
         self.board = chess.Board() # chess game board
@@ -100,17 +100,53 @@ class ChessEnv(gym.Env):
         return mask
     
     def _opponent_step(self) -> bool:
-        """ opponent makes a random move
+        """ Opponent makes a greedy move.
         Returns:
             if opponent has moved return True. If not return False
         """
-        legal_moves = self._legal_moves()
-
-        if len(legal_moves) == 0:
+        legal_moves = list(self.board.generate_legal_moves())
+        if not legal_moves:
             return False
 
-        opponent_move = random.choice(legal_moves)
-        self.board.push(opponent_move)
+        # Define simple piece values
+        piece_values = {
+            chess.PAWN: 1,
+            chess.KNIGHT: 3,
+            chess.BISHOP: 3,
+            chess.ROOK: 5,
+            chess.QUEEN: 9,
+            chess.KING: 0 # King value is irrelevant for capture
+        }
+
+        best_move = None
+        best_value = -float('inf')
+
+        # Shuffle moves to add randomness among equal-value moves
+        random.shuffle(legal_moves)
+
+        for move in legal_moves:
+            # 1. Check for checkmate
+            if self.board.gives_check(move) and self.board.is_checkmate():
+                best_move = move
+                break # Found the best possible move
+
+            # 2. Check for captures
+            value = 0
+            if self.board.is_capture(move):
+                captured_piece = self.board.piece_at(move.to_square)
+                if captured_piece:
+                    value = piece_values.get(captured_piece.piece_type, 0)
+            
+            if value > best_value:
+                best_value = value
+                best_move = move
+
+        # 3. If no good captures, best_move will still be set
+        #    from the loop (as the first random move with value 0)
+        if best_move is None:
+            best_move = legal_moves[0] # Should not happen if legal_moves > 0
+
+        self.board.push(best_move)
         return True
     
     def _count_pieces(self, color:bool) -> int:
@@ -149,28 +185,42 @@ class ChessEnv(gym.Env):
             self._opponent_step()
         
         #
-        reward = -0.2
+        reward = 0 #-0.2
         terminated = False
         
         # Atributte rewards to remaning pieces counts
-        take_rewards = (self._count_pieces(True) - start_pieces_count) * 0
+        take_rewards = (self._count_pieces(True) - start_pieces_count) * 1
         taken_rewards = (self._count_pieces(False) - opponent_start_pieces_count) * (-1)
         if take_rewards != 0 or taken_rewards != 0:
             reward = take_rewards
             reward += taken_rewards
 
         # check_out_comes
+        
+        info = self._get_info()
+
         outcome = self.board.outcome()
         if outcome:
             terminated = True
             if outcome.termination == chess.Termination.CHECKMATE:
-                reward = 100 if outcome.winner else -10
+                reward = 10 if outcome.winner else -10
+                # print("win" if outcome.winner else "lost")
+                info["win"] = 1 if outcome.winner else 0
             else:
-                reward = -3
+                # print("draw")
+                info["win"] = 0
+                reward = -5
+        
+        if self._count_pieces(True) <= 2:
+            # print("lost")
+            terminated = True
+            reward = -10
+            info["win"] = 0
+        
+
                 
         #
         observation = self._get_obs()
-        info = self._get_info()
 
         if self.render_mode == "human":
             self._render_frame()
@@ -213,7 +263,8 @@ class ChessEnv(gym.Env):
             # We need to ensure that human-rendering occurs at the predefined framerate.
             # The following line will automatically add a delay to
             # keep the framerate stable.
-            self.clock.tick(self.metadata["render_fps"])
+            if self.metadata["render_fps"] is not None:
+                self.clock.tick(self.metadata["render_fps"])
         else:  # rgb_array
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(image)), axes=(1, 0, 2)
