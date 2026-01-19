@@ -15,10 +15,6 @@ class CustomCNNExtractor(BaseFeaturesExtractor):
             nn.ReLU(),
             nn.Conv2d(128, 128, kernel_size=7, stride=1, padding=1),
             nn.ReLU(),
-            # nn.Conv2d(128, 256, kernel_size=8, stride=1, padding=2),
-            # nn.ReLU(),
-            # nn.Conv2d(256, 512, kernel_size=5, stride=1, padding=2),
-            # nn.ReLU(),
             nn.Flatten()
         )
         

@@ -1,3 +1,4 @@
+import os
 import gymnasium as gym
 import torch
 import torch.nn as nn
@@ -139,13 +140,13 @@ class ChessIntrinsicRewardWrapper(gym.Wrapper):
 
     def step(self, action):
         
-        if self.step_count % self.train_freq == 0: # read memory shared
-            latest_version = self.shared_state['version']
+        # if self.step_count % self.train_freq == 0: # read memory shared
+        latest_version = self.shared_state['version']
 
-            if latest_version > self.local_predictor_version:
-                # print(f"ENV {os.getpid()}: Updating to version {latest_version}") # Optional: for debugging
-                self.local_predictor.load_state_dict(self.shared_state['weights'])
-                self.local_predictor_version = latest_version
+        if latest_version > self.local_predictor_version:
+            print(f"ENV {os.getpid()}: Updating to version {latest_version}") # Optional: for debugging
+            self.local_predictor.load_state_dict(self.shared_state['weights'])
+            self.local_predictor_version = latest_version
             
         self.step_count += 1
         # 1. Get tensors for the *previous* state and *current* action
@@ -171,7 +172,10 @@ class ChessIntrinsicRewardWrapper(gym.Wrapper):
         r_total = r_extrinsic + (self.beta * r_intrinsic)
 
         # Store r_i for logging
-        info['r_intrinsic'] = float(r_intrinsic)
+        info['reward/raw_intrinsic'] = float(r_intrinsic)
+        info['reward/intrinsic'] = float(self.beta * r_intrinsic)
+        info['reward/extrinsic'] = float(r_extrinsic)
+        info['reward/total'] = float(r_total)
         
         return obs, r_total, done, truncated, info
 

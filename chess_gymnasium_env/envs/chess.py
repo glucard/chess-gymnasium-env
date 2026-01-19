@@ -1,4 +1,5 @@
 from enum import Enum
+import time
 import gymnasium as gym
 from gymnasium import spaces
 import pygame
@@ -20,7 +21,16 @@ class Actions(Enum):
     left = 2
     down = 3
 
-
+# Define simple piece values
+PIECE_VALUES = {
+    chess.PAWN: 1,
+    chess.KNIGHT: 3,
+    chess.BISHOP: 3,
+    chess.ROOK: 5,
+    chess.QUEEN: 9,
+    chess.KING: 0 # King value is irrelevant for capture
+}
+    
 class ChessEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": None} # 1 }
 
@@ -99,24 +109,14 @@ class ChessEnv(gym.Env):
             mask[move.from_square * 64 + move.to_square] = 1
         return mask
     
-    def _opponent_step(self) -> bool:
+    def _opponent_step(self) -> tuple[bool, float]:
         """ Opponent makes a greedy move.
         Returns:
             if opponent has moved return True. If not return False
         """
         legal_moves = list(self.board.generate_legal_moves())
         if not legal_moves:
-            return False
-
-        # Define simple piece values
-        piece_values = {
-            chess.PAWN: 1,
-            chess.KNIGHT: 3,
-            chess.BISHOP: 3,
-            chess.ROOK: 5,
-            chess.QUEEN: 9,
-            chess.KING: 0 # King value is irrelevant for capture
-        }
+            return False, 0
 
         best_move = None
         best_value = -float('inf')
@@ -135,7 +135,7 @@ class ChessEnv(gym.Env):
             if self.board.is_capture(move):
                 captured_piece = self.board.piece_at(move.to_square)
                 if captured_piece:
-                    value = piece_values.get(captured_piece.piece_type, 0)
+                    value = PIECE_VALUES.get(captured_piece.piece_type, 0)
             
             if value > best_value:
                 best_value = value
@@ -147,7 +147,7 @@ class ChessEnv(gym.Env):
             best_move = legal_moves[0] # Should not happen if legal_moves > 0
 
         self.board.push(best_move)
-        return True
+        return True, best_value
     
     def _count_pieces(self, color:bool) -> int:
         return sum([piece.color==color for piece in self.board.piece_map().values()])
@@ -178,22 +178,28 @@ class ChessEnv(gym.Env):
         move = self._action_to_move(action)
         
         # Push move to board
-        self.board.push(move)
+
+        reward = 0 #-0.2
+        captured_piece = self.board.piece_at(move.to_square)
+        if captured_piece:
+            reward += PIECE_VALUES[captured_piece.piece_type] / 9
+        self.board.push(move)            
 
         # Opponent tries a move if not has outcome yet:
         if not self.board.outcome():
-            self._opponent_step()
-        
-        #
-        reward = 0 #-0.2
+            _, captured_piece_value = self._opponent_step()
+
+            reward += -captured_piece_value / 9
+
+
         terminated = False
         
         # Atributte rewards to remaning pieces counts
-        take_rewards = (self._count_pieces(True) - start_pieces_count) * 1
-        taken_rewards = (self._count_pieces(False) - opponent_start_pieces_count) * (-1)
-        if take_rewards != 0 or taken_rewards != 0:
-            reward = take_rewards
-            reward += taken_rewards
+        # taken_rewards = (start_pieces_count - self._count_pieces(True)) * (-1)
+        # take_rewards = (opponent_start_pieces_count - self._count_pieces(False)) * 1
+        # if take_rewards != 0 or taken_rewards != 0:
+        #     reward = take_rewards
+        #     reward += taken_rewards
 
         # check_out_comes
         
@@ -201,21 +207,20 @@ class ChessEnv(gym.Env):
 
         outcome = self.board.outcome()
         if outcome:
+            # print("outcome:", outcome)
             terminated = True
             if outcome.termination == chess.Termination.CHECKMATE:
-                reward = 10 if outcome.winner else -10
+                reward = 10 if outcome.winner else -5
                 # print("win" if outcome.winner else "lost")
-                info["win"] = 1 if outcome.winner else 0
+                info["env/win"] = 1 if outcome.winner else 0
             else:
                 # print("draw")
-                info["win"] = 0
+                info["env/win"] = 0
                 reward = -5
-        
-        if self._count_pieces(True) <= 2:
-            # print("lost")
+        elif self._count_pieces(True) <= 2:
             terminated = True
-            reward = -10
-            info["win"] = 0
+            reward = -5
+            info["env/win"] = 0
         
 
                 
@@ -225,6 +230,11 @@ class ChessEnv(gym.Env):
         if self.render_mode == "human":
             self._render_frame()
 
+        if terminated:
+            info["env/captured_pieces"] = 16 - self._count_pieces(False)
+            info["env/lost_pieces"] = 16 - self._count_pieces(True)
+
+        # print(reward)
         return observation, reward, terminated, False, info
 
     def render(self):

@@ -23,6 +23,7 @@ from chess_gymnasium_env.envs.chess import ChessEnv
 # This assumes your wrapper is in this location as per your original script
 from chess_gymnasium_env.wrappers.chess_intrinsic_wrapper import ChessIntrinsicRewardWrapper, ChessActionPredictor
 from chessrl.cnnextractor import CustomCNNExtractor
+from chessrl.resnetextractor import CustomResNetxtractor
 
 
 from stable_baselines3.common.callbacks import BaseCallback
@@ -32,7 +33,7 @@ from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 import torch as th
 from queue import Empty
 
-
+N_BATCHES_ERROR_PREDICTOR = 100
 
 class RICallback(BaseCallback):
     def __init__(self, chess_actor_predictor: ChessActionPredictor, shared_state, verbose: int = 0):
@@ -72,8 +73,13 @@ class RICallback(BaseCallback):
         actions = th.tensor(rollout_buffer.actions.reshape(-1), dtype=th.long)
 
         losses = []
-        for i in range(10):
-            loss = self.chess_actor_predictor.train_model(observations, actions)
+
+        n_batches = N_BATCHES_ERROR_PREDICTOR
+        batch_size = observations.shape[0]//n_batches
+        for i in range(n_batches):
+            batch_obs = observations[i*batch_size:(i+1)*batch_size]
+            batch_act = actions[i*batch_size:(i+1)*batch_size]
+            loss = self.chess_actor_predictor.train_model(batch_obs, batch_act)
             
             losses.append(loss)
 
@@ -91,9 +97,12 @@ class RICallback(BaseCallback):
                 continue
             if isinstance(v[0], int) or isinstance(v[0], float):
                 avg_v = np.mean(v)
-                self.logger.record(f"custom/{k}", avg_v)
+                self.logger.record(f"{k}_mean", avg_v)
             
-        self.logger.record("custom/action_predictor_loss", sum(losses) / len(losses))
+            if k == "win":
+                print(k, v)
+            
+        self.logger.record("train/action_predictor_loss", sum(losses) / len(losses))
 
     def _on_step(self) -> bool:
         """
@@ -104,8 +113,9 @@ class RICallback(BaseCallback):
 
         :return: If the callback returns False, training is aborted early.
         """
-        for k, v in self.locals["infos"][-1].items():
-            self.info_buffer[k].append(v)
+        for env_info in self.locals["infos"]:
+            for k, v in env_info.items():
+                self.info_buffer[k].append(v)
         
         return True
 
@@ -130,11 +140,11 @@ def make_env(shared_state, beta=0.1):
     """
     def _init():
         # 1. Create the base environment
-        env = ChessEnv(render_mode="human")
+        env = ChessEnv()#render_mode="human")
         
         # 2. Wrap it with the intrinsic reward calculator
         # This wrapper adds r_intrinsic to the extrinsic reward
-        local_predictor = ChessActionPredictor(env.observation_space.shape, env.action_space.n) # type: ignore
+        local_predictor = ChessActionPredictor(env.observation_space.shape, env.action_space.n, lr=0.0005) # type: ignore
         local_predictor.eval()
 
         env = ChessIntrinsicRewardWrapper(
@@ -157,8 +167,8 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-l', '--load_model', default=False, type=bool) 
     parser.add_argument('-p', '--path', default="data/ppo_mask", type=str) 
-    parser.add_argument('-b', '--beta', default=0.3, type=float, help="Scaling factor for intrinsic reward")
-    parser.add_argument('-n', '--n_envs', default=8, type=int, help="Number of parallel environments")
+    parser.add_argument('-b', '--beta', default=0.02, type=float, help="Scaling factor for intrinsic reward")
+    parser.add_argument('-n', '--n_envs', default=12, type=int, help="Number of parallel environments")
     args = parser.parse_args()
     
     with mp.Manager() as manager:
@@ -178,7 +188,7 @@ if __name__=="__main__":
         act_dim = temp_env.action_space.n # type: ignore
         del temp_env
         
-        master_predictor = ChessActionPredictor(obs_shape, act_dim, lr=0.0007)
+        master_predictor = ChessActionPredictor(obs_shape, act_dim, lr=0.0001)
         master_predictor.init_optimizer()
         print(f"Predictor shared.")
 
@@ -193,19 +203,17 @@ if __name__=="__main__":
 
         env = VecMonitor(SubprocVecEnv([make_env(shared_state=shared_state, beta=args.beta) for _ in range(args.n_envs)], start_method='spawn'))
         
-        # --- IMPORTANT ---
-        # Normalize observations, but NOT the rewards.
-        # The intrinsic reward is a scaled error, not an extrinsic signal.
-        # Normalizing it can wash out the "surprise" signal.
+        
         print("--- Normalizing observations (norm_obs=True) but NOT rewards (norm_reward=False) ---")
-        env = VecNormalize(env, norm_obs=False, norm_reward=False)
+        env = VecNormalize(env, norm_obs=True, norm_reward=False)
         # -------------------
 
         # Setting policy
         policy_kwargs = dict(
-            features_extractor_class=CustomCNNExtractor,
-            features_extractor_kwargs=dict(features_dim=256),
-            net_arch=dict(pi=[256, 256], vf=[256, 256])
+            features_extractor_class=CustomResNetxtractor,
+            features_extractor_kwargs=dict(features_dim=1024),
+            net_arch=dict(pi=[256, 256], vf=[256, 256]),
+            activation_fn=th.nn.ReLU,
         )        
 
         if args.load_model:
@@ -218,12 +226,12 @@ if __name__=="__main__":
                 env,
                 policy_kwargs=policy_kwargs,
                 learning_rate=1e-5,
-                n_steps=128,
+                n_steps=512,
                 # n_steps=32,
                 batch_size=64,
                 gamma=0.99,
                 gae_lambda=0.95,
-                ent_coef=0.005,
+                ent_coef=0.01,
                 clip_range=0.2,
                 # target_kl=0.05,
                 vf_coef=0.5,
